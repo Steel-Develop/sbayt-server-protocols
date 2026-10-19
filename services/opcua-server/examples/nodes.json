@@ -1,0 +1,10 @@
+{
+  "nodes": [
+    {
+      "node_id": "ns=2;s=temperature",
+      "data_type": "Double",
+      "name": "temperature",
+      "inactivity_timeout_seconds": 3.0
+    }
+  ]
+}

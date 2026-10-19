@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: 0.11.29
+          python-version: '3.14'
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            services/opcua-server/uv.lock
+      - name: Install public dependencies
+        run: |
+          uv sync --locked
+          uv sync --project services/opcua-server --locked --all-groups
+      - name: Check dependencies, format and types
+        run: |
+          uv pip check --python .venv/bin/python
+          uv pip check --python services/opcua-server/.venv/bin/python
+          uv run --locked ruff check .
+          uv run --locked ruff format --check .
+          uv run --project services/opcua-server mypy --config-file services/opcua-server/pyproject.toml services/opcua-server/src
+      - name: Test OPC UA source
+        working-directory: services/opcua-server
+        run: uv run --locked pytest
+
+  catalog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      services: ${{ steps.catalog.outputs.services }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: catalog
+        run: echo "services=$(jq -c . services.json)" >> "$GITHUB_OUTPUT"
+
+  images:
+    needs: [checks, catalog]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.catalog.outputs.services) }}
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: 0.11.29
+          python-version: '3.14'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.service.context }}
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: ${{ matrix.service.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.service.name }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ matrix.platform }}
+      - name: Test container protocol and health
+        env:
+          SERVER_PROTOCOL: ${{ matrix.service.name }}
+          SERVER_IMAGE: ${{ matrix.service.image }}:ci
+          SERVER_PLATFORM: ${{ matrix.platform }}
+        run: uv run --locked --group "$SERVER_PROTOCOL" pytest "tests/test_${SERVER_PROTOCOL}.py" -q

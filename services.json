@@ -1,0 +1,14 @@
+[
+  {
+    "name": "opcua",
+    "context": "services/opcua-server",
+    "image": "sbayt1/sbayt-opcua-server",
+    "port": 4840
+  },
+  {
+    "name": "mqtt",
+    "context": "services/mqtt-server",
+    "image": "sbayt1/sbayt-mqtt-server",
+    "port": 1883
+  }
+]
