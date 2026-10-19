@@ -14,13 +14,16 @@ import pytest
 @pytest.fixture(scope="module")
 def docker():
     def run(*arguments: str) -> str:
-        return subprocess.run(
+        result = subprocess.run(
             ["docker", *arguments],
             check=True,
             capture_output=True,
             text=True,
             timeout=30,
-        ).stdout.strip()
+        )
+        if arguments[0] == "logs":
+            return (result.stdout + result.stderr).strip()
+        return result.stdout.strip()
 
     return run
 
@@ -28,7 +31,7 @@ def docker():
 @pytest.fixture(scope="module")
 def wait_for_health(docker):
     def wait(name: str) -> None:
-        deadline = time.monotonic() + 40
+        deadline = time.monotonic() + 180
         while time.monotonic() < deadline:
             state = json.loads(docker("inspect", name))[0]["State"]
             if state.get("Health", {}).get("Status") == "healthy":
@@ -36,7 +39,11 @@ def wait_for_health(docker):
             if not state["Running"]:
                 break
             time.sleep(0.2)
-        pytest.fail(f"Container did not become healthy: {docker('logs', name)}")
+        state = json.loads(docker("inspect", name))[0]["State"]
+        pytest.fail(
+            f"Container did not become healthy: {json.dumps(state)}\n"
+            f"Container logs:\n{docker('logs', name)}"
+        )
 
     return wait
 

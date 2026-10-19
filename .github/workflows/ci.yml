@@ -37,6 +37,8 @@ jobs:
           uv run --locked ruff check .
           uv run --locked ruff format --check .
           uv run --project services/opcua-server mypy --config-file services/opcua-server/pyproject.toml services/opcua-server/src
+      - name: Test container lifecycle
+        run: uv run --locked pytest tests/test_conftest.py -q
       - name: Test OPC UA source
         working-directory: services/opcua-server
         run: uv run --locked pytest
